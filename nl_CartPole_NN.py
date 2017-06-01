@@ -28,11 +28,11 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 
 class QL_NN:
-    MAX_REPLAY_STEPS = 1000
-    RANDOM_ACTION_PROB = 0.1
+    MAX_REPLAY_STEPS = 1000*10
+    RANDOM_ACTION_PROB = 0.1*5
     MAX_EPISODES = 1000
     MAX_ENV_STEPS = 1000
-    QL_GAMMA = 0.8
+    QL_GAMMA = 0.9
     WATCH_INTERVAL = 10
     SAMPLE_TRAIN_SIZE = 128
     LEARNING_RATE = 0.001
@@ -53,6 +53,9 @@ class QL_NN:
     def make_agent(self):
         self.obs_in = tf.placeholder(tf.float32, shape=[None, self.obs_size])
         self.Qs_gt = tf.placeholder(tf.float32, shape=[None, self.action_size])
+        self.act_num = tf.placeholder(tf.int32, shape=[None])
+
+        Q_mask = tf.one_hot(self.act_num, self.action_size)
 
         # vars
         W_fc1 = tf.Variable(tf.truncated_normal([self.obs_size, 32], stddev=0.1))
@@ -68,7 +71,10 @@ class QL_NN:
         h_fc2 = tf.nn.relu(tf.matmul(h_fc1, W_fc2) + b_fc2)
         self.Qs_nn = tf.matmul(h_fc2, W_fc3) + b_fc3
 
-        self.loss = tf.reduce_mean(tf.square(tf.subtract(self.Qs_nn, self.Qs_gt)))
+        self.Q_masked = tf.multiply(self.Qs_nn, Q_mask)
+
+        self.loss = tf.reduce_mean(
+                        tf.square(tf.subtract(self.Q_masked, self.Qs_gt)))
 
         self.train_step = tf.train.AdamOptimizer(self.LEARNING_RATE).minimize(self.loss)
 
@@ -129,6 +135,7 @@ class QL_NN:
 
         max_target_Q = np.zeros(self.SAMPLE_TRAIN_SIZE)
         target_Qs = np.zeros((self.SAMPLE_TRAIN_SIZE, self.action_size))
+        target_actions = np.zeros(self.SAMPLE_TRAIN_SIZE)
         for i in range(self.SAMPLE_TRAIN_SIZE):
             state_obs, action, reward, next_state_obs, is_done = batch_memory[i]
 
@@ -136,14 +143,17 @@ class QL_NN:
             if not is_done:
                 max_target_Q[i] += self.QL_GAMMA * max_predicted_Qs[i]
             target_Qs[i][action] = max_target_Q[i]
+            target_actions[i] = action
 
         features = [f[0] for f in batch_memory]
 
         # print features[:10]
         # print target_Qs[:10]
 
-        _, loss, Qs_nn = self.sess.run([self.train_step, self.loss, self.Qs_nn], 
-                    feed_dict={self.obs_in:features, self.Qs_gt:target_Qs})
+        _, loss, Qs_nn, Q_masked = self.sess.run([self.train_step, self.loss, 
+                                                    self.Qs_nn, self.Q_masked], 
+                    feed_dict={self.obs_in:features, self.Qs_gt:target_Qs,
+                                self.act_num:target_actions})
 
         # print "Agent Score", self.agent.score(features, target_Qs)
         # print self.agent.predict(features)[:10]
@@ -151,7 +161,7 @@ class QL_NN:
             self.agent_is_trained = True
             print "Trained"
 
-        return loss, Qs_nn, target_Qs
+        return loss, Qs_nn, target_Qs, Q_masked
 
     def train(self):
         self.initialize()
@@ -190,11 +200,11 @@ class QL_NN:
                 # time.sleep(0.1)
 
                 if len(self.replay_memory) > self.SAMPLE_TRAIN_SIZE:
-                    loss, Qs_nn, target_Qs = self.train_agent()
+                    loss, Qs_nn, target_Qs, Q_masked = self.train_agent()
                     if overall_steps % 100 == 0:
-                        print "Total Steps", overall_steps, "Loss", loss
-                        print Qs_nn[:10]
-                        print target_Qs[:10]
+                        print "Episode", ep, "Total Steps", overall_steps, "Loss", loss
+                        # for i in range(2):
+                        #     print Qs_nn[i], Q_masked[i], target_Qs[i]
 
                 overall_steps += 1
 
