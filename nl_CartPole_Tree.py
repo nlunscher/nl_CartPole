@@ -26,12 +26,14 @@ import matplotlib.pyplot as plt
 
 from sklearn.tree import DecisionTreeRegressor
 
-class QL:
-    MAX_REPLAY_STEPS = 1000
-    RANDOM_ACTION_PROB = 0.5
-    MAX_EPISODES = 100
+class QL_Tree:
+    MAX_REPLAY_STEPS = 128*3
+    RANDOM_ACTION_PROB = 0.1
+    MAX_EPISODES = 1000
     MAX_ENV_STEPS = 1000
     QL_GAMMA = 0.8
+    WATCH_INTERVAL = 20
+    SAMPLE_TRAIN_SIZE = 128
 
     def __init__(self, env_name):
         self.env = gym.make(env_name)
@@ -40,7 +42,7 @@ class QL:
         self.action_size = self.env.action_space.n
         print "Env:", env_name, "Observations:", self.obs_size, "Actions:", self.action_size
 
-        self.replay_memory = [] # [state_obs, action, reward, next_state_obs]
+        self.replay_memory = [] # [state_obs, action, reward, next_state_obs, is_done]
 
         self.agent = DecisionTreeRegressor()
         self.agent_is_trained = False
@@ -75,7 +77,7 @@ class QL:
 
             observation = new_observation
 
-            time.sleep(0.1)
+            time.sleep(0.05)
         return total_steps
 
     def agent_action(self, observation):
@@ -88,30 +90,36 @@ class QL:
 
     def train_agent(self):
         # print "Training Agent"
+        batch_memory = random.sample(self.replay_memory, self.SAMPLE_TRAIN_SIZE)
 
-        max_predicted_Qs = np.zeros(len(self.replay_memory))
-        for i in range(len(self.replay_memory)):
-            qs = self.agent_action(self.replay_memory[i][0])
-            max_predicted_Qs[i] = np.argmax(qs)
+        max_predicted_Qs = np.zeros(self.SAMPLE_TRAIN_SIZE)
+        for i in range(self.SAMPLE_TRAIN_SIZE):
+            qs = self.agent_action(batch_memory[i][0])
+            max_predicted_Qs[i] = np.max(qs)
 
-        max_target_Q = np.zeros(len(self.replay_memory))
-        target_Qs = np.zeros((len(self.replay_memory), self.action_size))
-        for i in range(len(self.replay_memory)):
-            state_obs, action, reward, next_state_obs = self.replay_memory[i]
+        max_target_Q = np.zeros(self.SAMPLE_TRAIN_SIZE)
+        target_Qs = np.zeros((self.SAMPLE_TRAIN_SIZE, self.action_size))
+        for i in range(self.SAMPLE_TRAIN_SIZE):
+            state_obs, action, reward, next_state_obs, is_done = batch_memory[i]
 
-            max_target_Q[i] = reward + self.QL_GAMMA * max_predicted_Qs[i]
+            max_target_Q[i] = reward 
+            if not is_done:
+                max_target_Q[i] += self.QL_GAMMA * max_predicted_Qs[i]
             target_Qs[i][action] = max_target_Q[i]
 
-        features = [f[0] for f in self.replay_memory]
+        features = [f[0] for f in batch_memory]
 
         self.agent.fit(features, target_Qs)
         # print "Agent Score", self.agent.score(features, target_Qs)
+        # # print features[0]
+        # print target_Qs[:10]
+        # print self.agent.predict(features)[:10]
         self.agent_is_trained = True
 
     def train(self):
         agent_steps = []
         for ep in range(self.MAX_EPISODES):
-            if ep % 10 == 0:
+            if ep % self.WATCH_INTERVAL == 0:
                 # watch the agent play
                 total_steps = self.agent_play()
                 agent_steps.append(total_steps)
@@ -130,7 +138,7 @@ class QL:
                 if is_done:
                     reward = -100
 
-                self.replay_memory.append([obs, action, reward, new_obs])
+                self.replay_memory.append([obs, action, reward, new_obs, is_done])
                 if len(self.replay_memory) > self.MAX_REPLAY_STEPS:
                     self.replay_memory.pop(0)
 
@@ -141,15 +149,15 @@ class QL:
                 obs = new_obs
                 # time.sleep(0.1)
 
-            if len(self.replay_memory) > 0:
+            if len(self.replay_memory) > self.SAMPLE_TRAIN_SIZE:
                 self.train_agent()
 
-        plt.plot(range(self.MAX_EPISODES/10), agent_steps)
+        plt.plot(range(self.MAX_EPISODES/self.WATCH_INTERVAL), agent_steps)
         plt.show()
 
 
 if __name__ == "__main__":
-    ql = QL('CartPole-v0')
+    ql = QL_Tree('CartPole-v0')
     # ql.random_play()
 
     ql.train()
