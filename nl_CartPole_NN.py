@@ -28,15 +28,15 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 
 class QL_NN:
-    MAX_REPLAY_STEPS = 10000
-    MAX_EPISODES = 300
+    MAX_REPLAY_STEPS = 40000
+    MAX_EPISODES = 1500
     MAX_ENV_STEPS = 1000
     QL_GAMMA = 0.9
     RANDOM_ACTION_PROB = 0.1*3
     RANDOM_DECAY_RATE = 1.0/MAX_EPISODES
     WATCH_INTERVAL = 10
-    SAMPLE_TRAIN_SIZE = 128
-    LEARNING_RATE = 0.001
+    SAMPLE_TRAIN_SIZE = 128*2
+    LEARNING_RATE = 0.001/2
     FINAL_SCORE_PLACEHOLDER = 9999
     REMOVE_WORST = False
     VAL_GAMES = 10
@@ -58,6 +58,7 @@ class QL_NN:
         self.obs_in = tf.placeholder(tf.float32, shape=[None, self.obs_size])
         self.Qs_gt = tf.placeholder(tf.float32, shape=[None, self.action_size])
         self.act_num = tf.placeholder(tf.int32, shape=[None])
+        self.keep_prob = tf.placeholder(tf.float32)
 
         Q_mask = tf.one_hot(self.act_num, self.action_size)
 
@@ -71,9 +72,11 @@ class QL_NN:
         W_fc3 = tf.Variable(tf.truncated_normal([32, self.action_size], stddev=0.1))
         b_fc3 = tf.Variable(tf.constant(0.1, shape=[self.action_size]))
 
+        # network
         h_fc1 = tf.nn.relu(tf.matmul(self.obs_in, W_fc1) + b_fc1)
         h_fc2 = tf.nn.relu(tf.matmul(h_fc1, W_fc2) + b_fc2)
-        self.Qs_nn = tf.matmul(h_fc2, W_fc3) + b_fc3
+        h_fc2_drop = tf.nn.dropout(h_fc2, self.keep_prob)
+        self.Qs_nn = tf.matmul(h_fc2_drop, W_fc3) + b_fc3
 
         self.Q_masked = tf.multiply(self.Qs_nn, Q_mask)
 
@@ -125,7 +128,7 @@ class QL_NN:
         return total_steps
 
     def agent_action(self, observation):
-        predicted_Qs = self.sess.run(self.Qs_nn, feed_dict={self.obs_in:[observation]})
+        predicted_Qs = self.sess.run(self.Qs_nn, feed_dict={self.obs_in:[observation], self.keep_prob:1.})
         action = np.argmax(predicted_Qs)
         return action, predicted_Qs
 
@@ -158,7 +161,8 @@ class QL_NN:
         _, loss, Qs_nn, Q_masked = self.sess.run([self.train_step, self.loss, 
                                                     self.Qs_nn, self.Q_masked], 
                     feed_dict={self.obs_in:features, self.Qs_gt:target_Qs,
-                                self.act_num:target_actions})
+                                self.act_num:target_actions,
+                                self.keep_prob:0.5})
 
         # print "Agent Score", self.agent.score(features, target_Qs)
         # print self.agent.predict(features)[:10]
@@ -178,14 +182,17 @@ class QL_NN:
         for ep in range(self.MAX_EPISODES):
             if ep % self.WATCH_INTERVAL == 0:
                 # watch the agent play
-                print ep, time.time() - start_time
                 total_avg = 0
                 for i in range(self.VAL_GAMES):
                     total_avg += self.agent_play(show_game=False)
                 total_avg /= 1.0 * self.VAL_GAMES
                 agent_steps.append(total_avg)
-                print "Average", total_avg
+                print ep, time.time() - start_time, "Average", total_avg
                 total_steps = self.agent_play()
+
+                plt.close()
+                plt.plot(range(0, len(agent_steps)*self.WATCH_INTERVAL, self.WATCH_INTERVAL), agent_steps)
+                plt.show(block=False)
 
             obs = self.env.reset()
             total_reward = 0
@@ -246,7 +253,9 @@ class QL_NN:
 
                 overall_steps += 1
 
-        plt.plot(range(self.MAX_EPISODES/self.WATCH_INTERVAL), agent_steps)
+        print "Done"
+        plt.close()
+        plt.plot(range(0, len(agent_steps)*self.WATCH_INTERVAL, self.WATCH_INTERVAL), agent_steps)
         plt.show()
 
 
