@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 
 class QL_NN:
-    MAX_REPLAY_STEPS = 40000
+    MAX_REPLAY_STEPS = 120000
     MAX_EPISODES = 1500
     MAX_ENV_STEPS = 1000
     QL_GAMMA = 0.9
@@ -40,6 +40,7 @@ class QL_NN:
     FINAL_SCORE_PLACEHOLDER = 9999
     REMOVE_WORST = False
     VAL_GAMES = 10
+    WIN_CONDITION = 200
 
     def __init__(self, env_name, sess):
         self.env = gym.make(env_name)
@@ -206,8 +207,10 @@ class QL_NN:
                     action, predicted_Qs = self.agent_action(obs)
 
                 new_obs, reward, is_done, info = self.env.step(action)
-                if is_done:
+                if is_done and step+1 < self.WIN_CONDITION:
                     reward = -100
+                elif is_done:
+                    print ep, "Won in training"
                 total_reward += reward
 
                 self.replay_memory.append([obs, action, reward, new_obs, is_done, ep, self.FINAL_SCORE_PLACEHOLDER])
