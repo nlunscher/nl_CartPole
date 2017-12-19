@@ -29,7 +29,7 @@ import tensorflow as tf
 
 class QL_NN:
     MAX_REPLAY_STEPS = 10000
-    MAX_EPISODES = 300
+    MAX_EPISODES = 100
     MAX_ENV_STEPS = 1000
     QL_GAMMA = 0.9
     RANDOM_ACTION_PROB = 0.1*3
